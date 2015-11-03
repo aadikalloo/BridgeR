@@ -1,0 +1,66 @@
+---
+title: "Assignment 2"
+author: "Aadi Kalloo"
+date: "November 3, 2015"
+output: html_document
+---
+
+The following code computes choose(n,r):
+
+```{r}
+calc_choose <- function(n,r)
+{ 
+  # declare all local variables
+  n1 <- n;
+  r1 <- r;
+  n_factorial <- 1;
+  nr_factorial <- 1;
+  r_factorial <- 1;
+  nchooser <- 1;
+  nr <- n - r;
+  
+  #set up three repeat loops. one each for n!, (n-r)!, and r!
+  repeat  
+  {
+      if (n1==0) {break}
+
+      n_factorial = n_factorial*n1;
+      n1 = n1 - 1;
+  }
+    
+  repeat  
+  {
+    if (nr==0) {break}
+      
+    nr_factorial = nr_factorial*nr;
+    nr = nr - 1;
+  }
+    
+  repeat  
+  {
+    if (r1==0) {break}
+      
+    r_factorial = r_factorial*r1;
+    r1 = r1 - 1;
+  }
+  
+  #compute n choose r
+  nchooser = n_factorial/(nr_factorial*r_factorial)
+  
+  #return answer
+  return(nchooser)  
+  
+}
+```
+
+
+The following code tests the above function:
+
+```{r}
+n <- 5   #Enter value for n
+r <- 3   #Enter value for r
+nchooser = calc_choose(n,r);
+nchooser
+
+```
+
