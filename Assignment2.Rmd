@@ -51,14 +51,22 @@ calc_choose <- function(n,r)
   return(nchooser)  
   
 }
+
+#This function allows user to enter integer and passes to variable
+readinteger <- function()
+{ 
+  n <- readline(prompt="Enter an integer: ")
+  return(as.integer(n))
+}
+
 ```
 
 
 The following code tests the above function:
 
 ```{r}
-n <- 5   #Enter value for n
-r <- 3   #Enter value for r
+n <- readinteger();   #Enter value for n
+r <- readinteger();   #Enter value for r
 nchooser = calc_choose(n,r);
 nchooser
 
