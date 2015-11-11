@@ -1,0 +1,79 @@
+---
+title: "Assignment 3"
+author: "Aadi Kalloo"
+date: "November 11, 2015"
+output: html_document
+---
+
+Data obtained from:
+https://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/agaricus-lepiota.data
+
+The following code pulls the dataset from the above resource. It then organizes a small subset of five columns and cleans the data therein:
+
+```{r}
+rawdata <- read.table("https://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/agaricus-lepiota.data",header=FALSE,sep=",")
+  
+ rawdata = rawdata[1:5]
+ names(rawdata)[names(rawdata)=="V1"] <- "Edible"
+ names(rawdata)[names(rawdata)=="V2"] <- "Cap Shape"
+ names(rawdata)[names(rawdata)=="V2"] <- "Cap_Shape"
+ names(rawdata)[names(rawdata)=="V3"] <- "Cap_Surface"
+ names(rawdata)[names(rawdata)=="V4"] <- "Cap_Color"
+ names(rawdata)[names(rawdata)=="V5"] <- "Bruises"
+ 
+ tempcol1 <- as.character(rawdata$Edible)
+ tempcol2 <- as.character(rawdata$`Cap Shape`)
+ tempcol3 <- as.character(rawdata$Cap_Surface)
+ tempcol4 <- as.character(rawdata$Cap_Color)
+ tempcol5 <- as.character(rawdata$Bruises)
+ 
+ tempcol1[tempcol1=="p"] = "Poisonous"
+ tempcol1[tempcol1=="e"] = "Edible"
+ 
+ tempcol2[tempcol2=="b"] = "Bell"
+ tempcol2[tempcol2=="c"] = "Conical"
+ tempcol2[tempcol2=="x"] = "Convex"
+ tempcol2[tempcol2=="f"] = "Flat"
+ tempcol2[tempcol2=="k"] = "Knobbed"
+ tempcol2[tempcol2=="s"] = "Sunken" 
+
+ tempcol3[tempcol3=="f"] = "Fibrous"
+ tempcol3[tempcol3=="g"] = "Grooves"
+ tempcol3[tempcol3=="y"] = "Scaly" 
+ tempcol3[tempcol3=="s"] = "Smooth"
+ 
+ tempcol4[tempcol4=="n"] = "Brown"
+ tempcol4[tempcol4=="b"] = "Buff"
+ tempcol4[tempcol4=="c"] = "Cinnamon"
+ tempcol4[tempcol4=="g"] = "Gray"
+ tempcol4[tempcol4=="r"] = "Green"
+ tempcol4[tempcol4=="p"] = "Pink"
+ tempcol4[tempcol4=="u"] = "Purple" 
+ tempcol4[tempcol4=="e"] = "Red" 
+ tempcol4[tempcol4=="w"] = "White"
+ tempcol4[tempcol4=="y"] = "Yellow"
+ 
+ tempcol5[tempcol5=="t"] = "Bruised"
+ tempcol5[tempcol5=="f"] = "No" 
+ 
+ 
+ db = rawdata[1:5];
+ db[1] = tempcol1;
+ db[2] = tempcol2;
+ db[3] = tempcol3;
+ db[4] = tempcol4;
+ db[5] = tempcol5;
+ 
+ 
+```
+
+
+The following code allows the viewing of the cleaned dataset:
+
+```{r}
+
+ View(db)
+
+
+```
+
