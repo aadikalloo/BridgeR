@@ -1,0 +1,519 @@
+---
+title: "TMS Analysis & Results -- One Sided Tests"
+author: "Aadi Kalloo"
+date: "March 28, 2016"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+This document shows the complete process of analysis for TMS Data.
+
+These are options that are most likely to need adjustment by users:
+```{r}
+#Data: https://github.com/aadikalloo/BridgeR/blob/master/tmsdata_MARCH28.csv
+URL = "https://raw.githubusercontent.com/aadikalloo/BridgeR/master/tmsdata_MARCH28.csv"
+
+#two-sided or one-sided tests for control vs rls
+t_test_type   = "one.sided"  #options are: "two.sided", "one.sided"
+mwu_test_type = "one.sided"  #options are: "two.sided", "one.sided"
+
+#two-sided or one-sided tests for male vs female
+t_test_typeMF   = "one.sided"  #options are: "two.sided", "one.sided"
+mwu_test_typeMF = "one.sided"  #options are: "two.sided", "one.sided"
+
+#specify number of digits to display in output tables
+numdigits = 4
+
+```
+
+Defining various constants for code later on:
+```{r}
+t_test_start_col = 5
+t_test_end_col = 26 #tms measures go until column 12; columns 13-26 contains RMT/intensity data
+
+mwu_start_col = 5
+mwu_end_col = 26 #tms measures go until column 12; columns 13-26 contains RMT/intensity data
+
+data_start_col = 5
+data_end_col = 26
+
+ttestdata_end_col = t_test_end_col - t_test_start_col - 1
+```
+
+#Analysis
+
+
+##Load Data
+
+Load necessary packages, pull data from GitHub, and set up as dataframe:
+```{r, warning = FALSE, message = FALSE}
+#install.packages("stringr")
+#install.packages("tidyr")
+#install.packages("dplyr")
+#install.packages("knitr")
+#install.packages("pander")
+
+library(stringr)
+library(tidyr)
+library(dplyr)
+library(knitr)
+library(pander)
+
+
+tmsdata = read.csv(URL)
+tmsdata2 = gather(tmsdata, "Measure", "Value", 5:26)
+```
+
+##Removal of participants
+
+Define which subjects should be removed:
+```{r, warning=FALSE}
+#We remove subjects 3, 14, 21, 76 because they either had crazy outliers or missing data
+subjects_to_remove = c("G13400", "G07396", "G76051", "G12737") 
+
+#according to email on March 22 2016, we want to remove the following subjects for the following reasons:
+# G80287 - Diabetes
+# G17673 - Thyroid
+# G29018 - Thyroid
+# G23418 - Thyroid
+# G39035 - Thyroid
+# G75351 - Thyroid
+
+subjects_to_remove = append(subjects_to_remove, c("G80287", "G17673", "G29018", "G23418", "G39035", "G75351"))
+
+```
+
+Remove subjects from dataframe:
+```{r}
+tmsdata = tmsdata[which(!tmsdata$ID %in% subjects_to_remove),]
+```
+
+##Removing Outliers
+
+Comb through data values to remove outliers. Outliers based on 1.5*IQR:
+```{r}
+#Allow outliers to be removed broken down by variable and status
+tmsdata_r = subset(tmsdata, tmsdata$STATUS == "RLS")
+tmsdata_c = subset(tmsdata, tmsdata$STATUS == "Control")
+
+for (var in data_start_col:data_end_col) {
+  third_quartile = quantile(tmsdata_r[, var], na.rm = TRUE)[[4]]
+  first_quartile = quantile(tmsdata_r[, var], na.rm = TRUE)[[2]]
+  low_cut = first_quartile - 1.5 * IQR(tmsdata_r[, var], na.rm = TRUE)
+  hi_cut  = third_quartile + 1.5 * IQR(tmsdata_r[, var], na.rm = TRUE)
+  
+  for (count in 1:length(tmsdata_r[, var])) {
+    if(!is.na(tmsdata_r[count, var])) {
+      if(tmsdata_r[count, var] < low_cut | tmsdata_r[count,var] > hi_cut) {
+         tmsdata_r[count, var] = NA #Any value that is not within range is removed
+      }
+    }
+  }
+      
+}
+
+
+
+for (var in data_start_col:data_end_col) {
+  third_quartile = quantile(tmsdata_c[, var], na.rm = TRUE)[[4]]
+  first_quartile = quantile(tmsdata_c[, var], na.rm = TRUE)[[2]]
+  low_cut = first_quartile - 1.5 * IQR(tmsdata_c[, var], na.rm = TRUE)
+  hi_cut  = third_quartile + 1.5 * IQR(tmsdata_c[, var], na.rm = TRUE)
+  
+  for (count in 1:length(tmsdata_c[, var])) {
+   if(!is.na(tmsdata_c[count, var])) {
+    if(tmsdata_c[count, var] < low_cut | tmsdata_c[count,var] > hi_cut) {
+      tmsdata_c[count, var] = NA #Any value that is not within range is removed
+    }
+   }
+  }
+      
+}
+
+#put data back together into a single dataframe
+tmsdata = rbind(tmsdata_r, tmsdata_c)
+```
+
+##Functions for T tests
+
+Create function that performs Independent Samples T Tests and organizes the data into a table:
+```{r, warning=FALSE}
+
+tmsTtest <- function(tmsdata1) {
+  
+  #initialize dataframe for t test data
+  ttestdata1 = data.frame(1,1,1,1,1,1,1,1)
+  
+  #set column names:
+  names(ttestdata1) = c("Measure",
+                       "Control_count",
+                       "RLS_count",
+                       "Control_mean", 
+                       "RLS_mean", 
+                       "Control_median", 
+                       "RLS_median", 
+                       "pValue")
+  
+  #Independent T tests for tms data, ignores gender:
+  for (var in t_test_start_col:t_test_end_col) {
+    mean_c = mean(subset(tmsdata1[, var],   tmsdata1$STATUS == "Control"), na.rm=TRUE)
+    mean_r = mean(subset(tmsdata1[, var],   tmsdata1$STATUS == "RLS"), na.rm=TRUE)
+    
+    if (t_test_type == "one.sided") {
+      if (mean_c > mean_r) {t_test_type1 = "greater"}
+      if (mean_c < mean_r) {t_test_type1 = "less"}
+    } else {
+      t_test_type1 = "two.sided"
+    }
+    
+    t_test = #the t-test is performed on each variable
+        t.test(subset(tmsdata1[, var], tmsdata1$STATUS == "Control"), 
+               subset(tmsdata1[, var], tmsdata1$STATUS == "RLS"), 
+               paired = FALSE, 
+               alternative = t_test_type1,
+               na.rm = TRUE) #%>% print()
+  
+    #set up the t-test-data table/dataframe:
+    ttestdata1[var - t_test_start_col + 1,] = 
+        c(    
+          tmsdata1[var] %>% names(),
+          length(subset(tmsdata1[, var], tmsdata1$STATUS == "Control" & tmsdata1[, var] != "NA")),
+          length(subset(tmsdata1[, var], tmsdata1$STATUS == "RLS" & tmsdata1[, var] != "NA")),
+          mean(subset(tmsdata1[, var],   tmsdata1$STATUS == "Control"), na.rm=TRUE),
+          mean(subset(tmsdata1[, var],   tmsdata1$STATUS == "RLS"), na.rm=TRUE),
+          median(subset(tmsdata1[, var], tmsdata1$STATUS == "Control"), na.rm=TRUE),
+          median(subset(tmsdata1[, var], tmsdata1$STATUS == "RLS"), na.rm=TRUE),
+          t_test$p.value
+        )
+    
+  }
+  return(ttestdata1)
+}
+
+
+#This function compares male and female data for a given RLS Status
+tmsTtest2 <- function(tmsdata1) {
+  
+  #initialize dataframe for t test data
+  ttestdata1 = data.frame(1,1,1,1,1,1,1,1)
+  
+  #set column names:
+  names(ttestdata1) = c("Measure",
+                       "Male_count",
+                       "Female_count",
+                       "Male_mean", 
+                       "Female_mean", 
+                       "Male_median", 
+                       "Female_median", 
+                       "pValue")
+  
+  #Independent T tests for tms data, separating by gender:
+  for (var in t_test_start_col:t_test_end_col) {
+  
+    mean_c1 = mean(subset(tmsdata1[, var],   tmsdata1$GENDER == "Male"),   na.rm=TRUE)
+    mean_r1 = mean(subset(tmsdata1[, var],   tmsdata1$GENDER == "Female"), na.rm=TRUE)
+    
+    if (t_test_typeMF == "one.sided") {
+      if (mean_c1 > mean_r1) {t_test_typeMF1 = "greater"}
+      if (mean_c1 < mean_r1) {t_test_typeMF1 = "less"}
+    } else {
+      t_test_typeMF1 = "two.sided"
+    }
+    
+    
+    t_test = #the t-test is performed on each variable
+        t.test(subset(tmsdata1[, var], tmsdata1$GENDER == "Male"), 
+               subset(tmsdata1[, var], tmsdata1$GENDER == "Female"), 
+               paired = FALSE, 
+               alternative = t_test_typeMF1,
+               na.rm = TRUE) #%>% print()
+  
+    #set up the t-test-data table/dataframe:
+    ttestdata1[var - t_test_start_col + 1,] = 
+        c(    
+          tmsdata1[var] %>% names(),
+          length(subset(tmsdata1[, var], tmsdata1$GENDER == "Male" & tmsdata1[, var] != "NA")),
+          length(subset(tmsdata1[, var], tmsdata1$GENDER == "Female" & tmsdata1[, var] != "NA")),
+          mean(subset(tmsdata1[, var],   tmsdata1$GENDER == "Male"), na.rm=TRUE),
+          mean(subset(tmsdata1[, var],   tmsdata1$GENDER == "Female"), na.rm=TRUE),
+          median(subset(tmsdata1[, var], tmsdata1$GENDER == "Male"), na.rm=TRUE),
+          median(subset(tmsdata1[, var], tmsdata1$GENDER == "Female"), na.rm=TRUE),
+          t_test$p.value
+        )
+    
+  }
+  return(ttestdata1)
+}
+```
+
+##Functions for Mann Whitney U Tests
+
+Create function that performs Mann Whitney U Tests and organizes the data into a table:
+
+```{r, warning = FALSE}
+
+tmsMWUtest <- function(tmsdata) {
+  
+  #initialize dataframe for mwu data :
+  mwutestdata = data.frame(1,1,1,1,1,1,1,1)
+  
+  #set column names:
+  names(mwutestdata) = c("Measure",
+                         "Control_count",
+                         "RLS_count",
+                         "Control_mean", 
+                         "RLS_mean", 
+                         "Control_median", 
+                         "RLS_median", 
+                         "pValue")
+  
+  #Mann-Whitney U tests for tms data, ignores gender:
+  for (var in mwu_start_col:mwu_end_col) {
+    median_c = median(subset(tmsdata[, var],   tmsdata$STATUS == "Control"), na.rm=TRUE)
+    median_r = median(subset(tmsdata[, var],   tmsdata$STATUS == "RLS"), na.rm=TRUE)
+    
+    if (mwu_test_type == "one.sided") {
+      if (median_c > median_r) {mwu_test_type1 = "greater"}
+      if (median_c < median_r) {mwu_test_type1 = "less"}
+    } else {
+      mwu_test_type1 = "two.sided"
+    }
+    
+    
+    
+    mwu_test = 
+    wilcox.test(subset(tmsdata[, var], tmsdata$STATUS == "Control"), 
+                subset(tmsdata[, var], tmsdata$STATUS == "RLS"), 
+                paired = FALSE, 
+                alternative = mwu_test_type1,
+                correct = FALSE,
+                na.rm = TRUE) #%>% print()
+    
+    
+    #set up table/dataframe for mwu test data:
+    mwutestdata[var - t_test_start_col + 1,] = 
+      c(    
+        tmsdata[var] %>% names(),
+        length(subset(tmsdata[, var], tmsdata$STATUS == "Control" & tmsdata[, var] != "NA")),
+        length(subset(tmsdata[, var], tmsdata$STATUS == "RLS" & tmsdata[, var] != "NA")),
+        mean(subset(tmsdata[, var],   tmsdata$STATUS == "Control"), na.rm=TRUE),
+        mean(subset(tmsdata[, var],   tmsdata$STATUS == "RLS"), na.rm=TRUE),
+        median(subset(tmsdata[, var], tmsdata$STATUS == "Control"), na.rm=TRUE),
+        median(subset(tmsdata[, var], tmsdata$STATUS == "RLS"), na.rm=TRUE),
+        mwu_test$p.value
+      )
+  }
+  return(mwutestdata)
+}
+
+#This function compares male and female data for a given RLS Status
+tmsMWUtest2 <- function(tmsdata) {
+  
+  #initialize dataframe for mwu data :
+  mwutestdata = data.frame(1,1,1,1,1,1,1,1)
+  
+  #set column names:
+  names(mwutestdata) = c("Measure",
+                         "Male_count",
+                         "Female_count",
+                         "Male_mean", 
+                         "Female_mean", 
+                         "Male_median", 
+                         "RLS_median", 
+                         "pValue")
+  
+  #Mann-Whitney U tests for tms data, separating by Gender:
+  for (var in mwu_start_col:mwu_end_col) {
+    median_c = median(subset(tmsdata[, var],   tmsdata$GENDER == "Male"), na.rm=TRUE)
+    median_r = median(subset(tmsdata[, var],   tmsdata$GENDER == "Female"), na.rm=TRUE)
+    
+    if (mwu_test_typeMF == "one.sided") {
+      if (median_c > median_r) {mwu_test_typeMF1 = "greater"}
+      if (median_c < median_r) {mwu_test_typeMF1 = "less"}
+    } else {
+      mwu_test_typeMF1 = "two.sided"
+    }
+    
+    
+    
+    mwu_test = 
+    wilcox.test(subset(tmsdata[, var], tmsdata$GENDER == "Male"), 
+                subset(tmsdata[, var], tmsdata$GENDER == "Female"), 
+                paired = FALSE, 
+                alternative = mwu_test_typeMF1,
+                correct = FALSE,
+                na.rm = TRUE) #%>% print()
+    
+    
+    #set up table/dataframe for mwu test data:
+    mwutestdata[var - t_test_start_col + 1,] = 
+      c(    
+        tmsdata[var] %>% names(),
+        length(subset(tmsdata[, var], tmsdata$GENDER == "Male" & tmsdata[, var] != "NA")),
+        length(subset(tmsdata[, var], tmsdata$GENDER == "Female" & tmsdata[, var] != "NA")),
+        mean(subset(tmsdata[, var],   tmsdata$GENDER == "Male"), na.rm=TRUE),
+        mean(subset(tmsdata[, var],   tmsdata$GENDER == "Female"), na.rm=TRUE),
+        median(subset(tmsdata[, var], tmsdata$GENDER == "Male"), na.rm=TRUE),
+        median(subset(tmsdata[, var], tmsdata$GENDER == "Female"), na.rm=TRUE),
+        mwu_test$p.value
+      )
+  }
+  return(mwutestdata)
+}
+```
+
+##Preparing Data
+
+Call all functions:
+```{r, warning = FALSE}
+ttestdata   = tmsTtest(tmsdata)
+mwutestdata = tmsMWUtest(tmsdata)
+
+ttestdataMF_Control   = tmsTtest2(subset(tmsdata, tmsdata$STATUS=="Control"))
+ttestdataMF_RLS       = tmsTtest2(subset(tmsdata, tmsdata$STATUS=="RLS"))
+
+mwutestdataMF_Control = tmsMWUtest2(subset(tmsdata, tmsdata$STATUS=="Control"))
+mwutestdataMF_RLS     = tmsMWUtest2(subset(tmsdata, tmsdata$STATUS=="RLS"))
+
+ttestdata_males   = tmsTtest(subset(tmsdata, tmsdata$GENDER=="Male"))
+mwutestdata_males = tmsMWUtest(subset(tmsdata, tmsdata$GENDER=="Male"))
+
+ttestdata_females   = tmsTtest(subset(tmsdata, tmsdata$GENDER=="Female"))
+mwutestdata_females = tmsMWUtest(subset(tmsdata, tmsdata$GENDER=="Female"))
+
+```
+
+```{r}
+
+pValTable = data.frame(
+  ttestdata$Measure,
+  ttestdata$pValue,
+  mwutestdata$pValue,
+  ttestdata_males$pValue,   
+  mwutestdata_males$pValue, 
+  ttestdata_females$pValue,   
+  mwutestdata_females$pValue, 
+  ttestdataMF_Control$pValue,
+  mwutestdataMF_Control$pValue, 
+  ttestdataMF_RLS$pValue,    
+  mwutestdataMF_RLS$pValue,
+  stringsAsFactors = FALSE
+)
+
+names(pValTable) = c("Measure",
+                     "All Control vs RLS,  TT",
+                     "All Control vs RLS, MWU",
+                     "Male Control vs RLS,  TT",
+                     "Male Control vs RLS, MWU",                     
+                     "Female Control vs RLS,  TT",
+                     "Female Control vs RLS, MWU",
+                     "Control Males vs Females,  TT",
+                     "Control Males vs Females, MWU",
+                     "RLS Males vs Females,  TT",
+                     "RLS Males vs Females, MWU"                     
+                    )
+
+
+```
+
+
+
+Convert values from chr to numeric:
+```{r}
+
+ttestdata[,2:length(names(ttestdata))] = sapply(ttestdata[,2:length(names(ttestdata))], as.numeric)
+mwutestdata[,2:length(names(mwutestdata))] = sapply(mwutestdata[,2:length(names(mwutestdata))], as.numeric)
+
+ttestdataMF_Control[,2:length(names(ttestdataMF_Control))] = sapply(ttestdataMF_Control[,2:length(names(ttestdataMF_Control))], as.numeric)
+mwutestdataMF_Control[,2:length(names(mwutestdataMF_Control))] = sapply(mwutestdataMF_Control[,2:length(names(mwutestdataMF_Control))], as.numeric)
+
+ttestdataMF_RLS[,2:length(names(ttestdataMF_RLS))] = sapply(ttestdataMF_RLS[,2:length(names(ttestdataMF_RLS))], as.numeric)
+mwutestdataMF_RLS[,2:length(names(mwutestdataMF_RLS))] = sapply(mwutestdataMF_RLS[,2:length(names(mwutestdataMF_RLS))], as.numeric)
+
+ttestdata_males[,2:length(names(ttestdata_males))] = sapply(ttestdata_males[,2:length(names(ttestdata_males))], as.numeric)
+mwutestdata_males[,2:length(names(mwutestdata_males))] = sapply(mwutestdata_males[,2:length(names(mwutestdata_males))], as.numeric)
+
+ttestdata_females[,2:length(names(ttestdata_females))] = sapply(ttestdata_females[,2:length(names(ttestdata_females))], as.numeric)
+mwutestdata_females[,2:length(names(mwutestdata_females))] = sapply(mwutestdata_females[,2:length(names(mwutestdata_females))], as.numeric)
+
+pValTable[,2:length(names(pValTable))] = sapply(pValTable[,2:length(names(pValTable))], as.numeric)
+
+```
+
+#Tables
+
+##T-tests, All Control vs RLS
+```{r}
+emphasize.strong.cells(which(ttestdata < 0.05, arr.ind = TRUE))   #highlight values <0.05
+pander(ttestdata, digits = numdigits, split.table = Inf)
+
+```
+
+##Mann Whitney U, All Control vs RLS
+```{r}
+emphasize.strong.cells(which(mwutestdata < 0.05, arr.ind = TRUE)) #highlight values <0.05
+pander(mwutestdata, digits = numdigits, split.table = Inf)
+```
+
+##T-tests, Male Control vs RLS
+```{r}
+emphasize.strong.cells(which(ttestdata_males < 0.05, arr.ind = TRUE))   #highlight values <0.05
+pander(ttestdata_males, digits = numdigits, split.table = Inf)
+
+```
+
+##Mann Whitney U, Male Control vs RLS
+```{r}
+emphasize.strong.cells(which(mwutestdata_males < 0.05, arr.ind = TRUE)) #highlight values <0.05
+pander(mwutestdata_males, digits = numdigits, split.table = Inf)
+```
+
+##T-tests, Female Control vs RLS
+```{r}
+emphasize.strong.cells(which(ttestdata_females < 0.05, arr.ind = TRUE))   #highlight values <0.05
+pander(ttestdata_females, digits = numdigits, split.table = Inf)
+
+```
+
+##Mann Whitney U, Female Control vs RLS
+```{r}
+emphasize.strong.cells(which(mwutestdata_females < 0.05, arr.ind = TRUE)) #highlight values <0.05
+pander(mwutestdata_females, digits = numdigits, split.table = Inf)
+```
+
+##T-tests, Control Male vs Female
+```{r}
+emphasize.strong.cells(which(ttestdataMF_Control < 0.05, arr.ind = TRUE))   #highlight values <0.05
+pander(ttestdataMF_Control, digits = numdigits, split.table = Inf)
+
+```
+
+##Mann Whitney U, Control Male vs Female
+```{r}
+emphasize.strong.cells(which(mwutestdataMF_Control < 0.05, arr.ind = TRUE)) #highlight values <0.05
+pander(mwutestdataMF_Control, digits = numdigits, split.table = Inf)
+```
+
+##T-tests, RLS Male vs Female
+```{r}
+emphasize.strong.cells(which(ttestdataMF_RLS < 0.05, arr.ind = TRUE))   #highlight values <0.05
+pander(ttestdataMF_RLS, digits = numdigits, split.table = Inf)
+
+```
+
+##Mann Whitney U, RLS Male vs Female
+```{r}
+emphasize.strong.cells(which(mwutestdataMF_RLS < 0.05, arr.ind = TRUE)) #highlight values <0.05
+pander(mwutestdataMF_RLS, digits = numdigits, split.table = Inf)
+
+```
+
+##Combined Table of P-Values
+```{r}
+emphasize.strong.cells(which(pValTable < 0.05, arr.ind = TRUE)) #highlight values <0.05
+pander(pValTable, digits = numdigits, split.table = Inf)
+
+```
+
+
